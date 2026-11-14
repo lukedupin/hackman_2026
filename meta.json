@@ -1,0 +1,18 @@
+{
+    "title": "Hackman",
+    "components": [
+        {
+            "name": "Hackman",
+            "comp": "Hackman",
+            "path": "/hackman",
+            "icon": "BoltIcon",
+            "fullscreen": true,
+            "entries": [
+                {"name": "TOPPicks", "path": "/hackman/top_picks", "icon": "TrophyIcon", "tags": []},
+                {"name": "Market", "path": "/hackman/market", "icon": "BuildingStorefrontIcon", "tags": []},
+                {"name": "Content Builder", "path": "/hackman/content_builder", "icon": "PencilSquareIcon", "tags": []},
+                {"name": "Deep Dive", "path": "/hackman/deep_dive", "icon": "MagnifyingGlassIcon", "tags": []}
+            ]
+        }
+    ]
+}

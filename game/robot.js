@@ -1,8 +1,7 @@
 import * as THREE from 'three'
 import {ITEM_TYPES} from './items.js'
 import {nearbyItems, NEARBY_RADIUS} from './level_runner.js'
-import {speak} from './speech.js'
-import {sendAway} from './leaving.js'
+import {fire} from './rules.js'
 import {TICK_SECONDS, waitTicks} from './clock.js'
 
 // What the player's code can do with the robot. These are the robot's functions as JavaScript async
@@ -29,7 +28,8 @@ import {TICK_SECONDS, waitTicks} from './clock.js'
 // ticks. An action that is refused still uses its tick up. The program does not go on to its next line
 // until the tick is over.
 //
-// Talking to a person makes them get up and leave the shop. So does spilling something next to them.
+// What people do when talked to, splashed or told off is not decided here: each person's `rules` in the
+// level say (see game/rules.js).
 //
 // An item is owned when its owner (a person, named by the level) is within 1.5 blocks of it, so a
 // wallet left on a table becomes fair game once whoever left it has wandered off. `owner` is always
@@ -46,6 +46,9 @@ const RELATIVE = {f: true, b: true, l: true, r: true}
 // The [column, row] step for 'f', 'b', 'l' or 'r' when the robot faces `facing` (an angle, as the robot
 // keeps it). Facing is taken as the nearest of north, east, south and west. North is up the screen (row
 // going down is south), so facing north, right is east.
+// The way a robot faces, as an angle: where it last turned to, or, before it has, the way it was set down
+const facingOf = player => player.facing ?? player.mesh.rotation.y
+
 const relativeStep = (facing, way) => {
     const across = Math.sin(facing)
     const down = Math.cos(facing)
@@ -54,27 +57,18 @@ const relativeStep = (facing, way) => {
     return step.map(value => value + 0)   // no negative zeros
 }
 
-const REACH = 1         // blocks, counting diagonals, for picking up and spilling
+// The compass direction ('n', 'e', 's' or 'w') that 'f', 'b', 'l' or 'r' means for the robot right now, or
+// null if the level has no robot. Interactive mode uses it to write out the move it was asked for.
+export const compassFor = (state, way) => {
+    const player = playerOf(state)
+    if (!player) {
+        return null
+    }
+    const [dx, dz] = relativeStep(facingOf(player), way)
+    return Object.keys(DIRECTIONS).find(key => DIRECTIONS[key][0] === dx && DIRECTIONS[key][1] === dz) ?? null
+}
 
-// What an owner says when the robot tries to take their things
-const BUZZ_OFF = [
-    'Buzz off!',
-    'Hey! Leave my stuff alone!',
-    "That's mine. Hands off, tin can!",
-    'Get your grubby claws off my things!',
-    'Do I look like I share?',
-    'Scram, you rusty heap!',
-    'Mine! Go find your own.',
-    'Back off, bucket of bolts!',
-]
-
-// What people say when something is spilled on them
-const SPLASHED = [
-    'Hey! My shirt! Look what you did!',
-    'Oh come ON! I am leaving!',
-    'Are you kidding me?! Unbelievable!',
-    'You got it all over me! I am done.',
-]
+const REACH = 1        // blocks, counting diagonals, for picking up and spilling
 
 // Thrown to end a program that has been stopped or whose level has gone. Its messages are what
 // python.js recognises as that (see HALTED there).
@@ -243,7 +237,7 @@ export const createRobot = (getState, log, run, clock) => {
     const move = async direction => {
         live()
         const way = String(direction).toLowerCase()
-        const delta = DIRECTIONS[way] ?? (way in RELATIVE ? relativeStep(player.facing, way) : null)
+        const delta = DIRECTIONS[way] ?? (way in RELATIVE ? relativeStep(facingOf(player), way) : null)
         if (!delta) {
             throw new Error(`move() takes 'n', 'e', 's' or 'w', or 'f', 'b', 'l' or 'r' from where the robot faces, not '${direction}'`)
         }
@@ -316,10 +310,14 @@ export const createRobot = (getState, log, run, clock) => {
         }
         const owner = ownerHere(state, item)
         if (owner) {
-            // The owner tells the robot off, in a speech bubble
-            const line = BUZZ_OFF[Math.floor(Math.random() * BUZZ_OFF.length)]
-            speak(state, owner, line)
-            log('action', `The ${nameOf(owner)} (${owner.id}) says: "${line}"`)
+            // What the owner does about it is up to their rules in the level
+            const reaction = fire(state, owner, 'item_grabbed')
+            if (reaction?.said) {
+                log('action', `The ${nameOf(owner)} (${owner.id}) says: "${reaction.said}"`)
+            }
+            if (reaction?.left) {
+                log('action', `The ${nameOf(owner)} (${owner.id}) gets up and leaves`)
+            }
             return fail(call, `it belongs to the ${nameOf(owner)} (${owner.id}), who is right there`)
         }
 
@@ -357,8 +355,12 @@ export const createRobot = (getState, log, run, clock) => {
 
         log('action', `You say to the ${nameOf(item)} (${id}): "${text}"`)
 
-        // Being talked to, they get up and leave
-        if (sendAway(state, item)) {
+        // What they do about it is up to their rules in the level
+        const reaction = fire(state, item, 'spoken_to')
+        if (reaction?.said) {
+            log('action', `The ${nameOf(item)} (${id}) says: "${reaction.said}"`)
+        }
+        if (reaction?.left) {
             log('action', `The ${nameOf(item)} (${id}) gets up and leaves`)
         }
         return {ok: true}
@@ -394,13 +396,16 @@ export const createRobot = (getState, log, run, clock) => {
 
         log('action', `${call} -> the ${nameOf(item)} is spilled`)
 
-        // Anyone right next to it gets it on them, and leaves
+        // Anyone right next to it gets it on them; what they do about it is up to their rules in the level
         const splashed = Object.values(state.items).filter(other => (
             ITEM_TYPES[other.type].person && !other.gone && gap(other, item) <= REACH
         ))
         for (const person of splashed) {
-            const line = SPLASHED[Math.floor(Math.random() * SPLASHED.length)]
-            if (sendAway(state, person, line)) {
+            const reaction = fire(state, person, 'splashed')
+            if (reaction?.said) {
+                log('action', `The ${nameOf(person)} (${person.id}) says: "${reaction.said}"`)
+            }
+            if (reaction?.left) {
                 log('action', `The ${nameOf(person)} (${person.id}) gets it all over them and leaves`)
             }
         }

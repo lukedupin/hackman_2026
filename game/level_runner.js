@@ -2,6 +2,7 @@ import {createItem} from './items.js'
 import {CONDITIONS} from './conditions.js'
 import {updateBubbles} from './speech.js'
 import {vanish} from './leaving.js'
+import {checkRules} from './rules.js'
 
 // Frees what an item's meshes hold on the GPU
 const disposeObject = object => {
@@ -151,13 +152,14 @@ export const loadLevel = (grid, level) => {
 
         // `surface` is how high things set on this item sit, or null if nothing can
         state.items[item.id] = {
-            id: item.id, type: item.type, on: item.on ?? null, owner: item.owner ?? null, held: false, col, row, cells, mesh, size: [cols, rows], motion,
+            id: item.id, type: item.type, on: item.on ?? null, owner: item.owner ?? null, rules: item.rules ?? [], held: false, col, row, cells, mesh, size: [cols, rows], motion,
             surface: top === null ? null : floor + top,
         }
     }
 
-    // An owner is another item in the level (the person who owns it)
+    // An owner is another item in the level (the person who owns it), and rules have to make sense
     for (const item of Object.values(state.items)) {
+        checkRules(level.id, item.id, item.rules)
         if (item.owner !== null && !state.items[item.owner]) {
             throw new Error(`Level '${level.id}', item '${item.id}': owner '${item.owner}' isn't an item`)
         }

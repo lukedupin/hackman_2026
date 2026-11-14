@@ -1,202 +1,230 @@
 // A busy coffee shop: a U-shaped bar in the middle with baristas inside it and customers on stools
-// around the outside, cafe tables along the edges, and people walking about. Written with a few
-// helpers so the people and furniture can be moved around without redoing the numbers.
+// around the outside, cafe tables along the edges, and people walking about.
 //
-// Everyone is white and has a loop of their own: the walkers go round a route (`path`), the sitters
-// scroll, type or glance about, and the baristas work the bar.
+// The level is complete in this file: every item is written out with where it is and what it does.
+//   at / on / offset   where it is: a cell [col, row], or on top of an earlier item (`offset` in cells)
+//   rotate             quarter turns clockwise; a person looks the way a chair at the same rotate faces,
+//                      and a laptop turned toward a person at R is at R + 2
+//   path, speed        a walker's loop of cells, from the last back to the first, and its speed
+//   owner              the id of the person it belongs to. It only counts as owned while that person
+//                      is within 1.5 blocks of it.
+//   rules              what a person does when something happens to them (see game/rules.js): when the
+//                      robot speaks to them, spills a drink beside them, or tries to take their things.
+//                      Each rule can make them `say` something and `leave` (get up and walk out by `exit`).
 //
-// A person at rotate R looks the way a chair at rotate R faces. A laptop's front faces +z at
-// rotate 0, so one turned toward a person at R is at R + 2.
-const items = []
+// Everyone is white and has a loop of their own: the walkers go round a route, the sitters scroll,
+// type or glance about, and the baristas work the bar. An item can only be put on one that is listed
+// before it, so tables and chairs come before what is on them.
 
-const turnedAround = rotate => (rotate + 2) % 4
-
-// A person standing at a spot, facing `rotate`
-const stand = (id, type, at, rotate) => {
-    items.push({id, type, at, rotate})
-}
-
-// A person walking round a loop of cells: from the last back to the first, over and over
-const walk = (id, type, path, speed) => {
-    items.push({id, type, path, speed})
-}
-
-// A person sitting on a chair or stool that is already in the list, facing the same way as it
-const sit = (id, type, seat, rotate) => {
-    items.push({id, type, on: seat, rotate})
-}
-
-// A chair with someone in it
-const seated = (id, type, at, rotate) => {
-    items.push({id: `${id}_chair`, type: 'chair', at, rotate})
-    sit(id, type, `${id}_chair`, rotate)
-}
-
-// Something on top of an item, a laptop turned toward whoever sits at `rotate`
-const put = (id, type, on, offset, rotate) => {
-    items.push({id, type, on, offset, rotate})
-}
-
-// The back wall
-for (let col = 0; col < 16; col++) {
-    items.push({id: `wall_${col}`, type: 'wall', at: [col, 0]})
-}
-
-// The bar: a U open toward the back wall. The bottom of the U is row 7 and the legs are columns 5
-// and 10. It is laid out below with its opening toward the front of the shop and every spot goes
-// through flip(), which turns the whole bar and everyone at it half way round the middle of the
-// bar: the cell [col, row] goes to [15 - col, 10 - row] and each facing turns two quarter turns.
-const flip = ([col, row]) => [15 - col, 10 - row]
-const half = rotate => (rotate + 2) % 4
-
-const BAR = [
-    [5, 3], [6, 3], [7, 3], [8, 3], [9, 3], [10, 3],
-    [5, 4], [5, 5], [5, 6], [5, 7],
-    [10, 4], [10, 5], [10, 6], [10, 7],
+// How each kind of person reacts. Change a list here to change how all of them do, or give one person
+// a `rules` of their own in the items below.
+const SITTER_RULES = [
+    {
+        when: 'spoken_to',
+        say: ["Fine, fine, I'm going.", 'Wow. Rude. I am leaving.', "I didn't want to sit here anyway.", 'Ugh, whatever. Bye.'],
+        leave: true,
+    },
+    {
+        when: 'splashed',
+        say: ['Hey! My shirt! Look what you did!', 'Oh come ON! I am leaving!', 'You got it all over me! I am done.'],
+        leave: true,
+    },
+    {
+        when: 'item_grabbed',
+        say: ['Buzz off!', 'Hey! Leave my stuff alone!', "That's mine. Hands off, tin can!", 'Do I look like I share?'],
+    },
 ]
-for (const [col, row] of BAR) {
-    items.push({id: `bar_${col}_${row}`, type: 'counter', at: flip([col, row])})
-}
 
-// Behind the bar
-put('machine_1', 'espresso_machine', 'bar_6_3', [0, 0], half(0))
-put('machine_2', 'espresso_machine', 'bar_9_3', [0, 0], half(0))
-put('bar_mug_1', 'coffee_mug', 'bar_7_3', [0, -0.1], 0)
-stand('barista_1', 'barista', flip([7, 4]), half(2))
-stand('barista_2', 'barista', flip([9, 5]), half(3))
+const WALKER_RULES = [
+    {
+        when: 'spoken_to',
+        say: ['Okay okay, I am leaving!', 'Weirdo. I am out of here.', "I don't have time for this."],
+        leave: true,
+    },
+    {
+        when: 'splashed',
+        say: ['Are you kidding me?! Unbelievable!', 'Oh come ON! I am leaving!'],
+        leave: true,
+    },
+    {
+        when: 'item_grabbed',
+        say: ['Get your grubby claws off my things!', 'Scram, you rusty heap!', 'Mine! Go find your own.'],
+    },
+]
 
-// Stools around the outside of the bar
-items.push(
-    {id: 'stool_l1', type: 'stool', at: flip([4, 5])},
-    {id: 'stool_l2', type: 'stool', at: flip([4, 6])},
-    {id: 'stool_r1', type: 'stool', at: flip([11, 5])},
-    {id: 'stool_r2', type: 'stool', at: flip([11, 6])},
-    {id: 'stool_b1', type: 'stool', at: flip([6, 2])},
-    {id: 'stool_b2', type: 'stool', at: flip([8, 2])},
-)
-sit('bar_left_1', 'sitter_phone', 'stool_l1', half(3))
-put('bar_left_mug', 'coffee_mug', 'bar_5_5', [0, 0], 0)
-sit('bar_left_2', 'sitter_laptop', 'stool_l2', half(3))
-put('bar_left_laptop', 'laptop', 'bar_5_6', [0, 0], turnedAround(half(3)))
-sit('bar_right_1', 'sitter_phone', 'stool_r1', half(1))
-put('bar_right_cup', 'cup', 'bar_10_5', [0, 0], 0)
-sit('bar_right_2', 'sitter_laptop', 'stool_r2', half(1))
-put('bar_right_laptop', 'laptop', 'bar_10_6', [0, 0], turnedAround(half(1)))
-sit('bar_back_1', 'sitter_phone', 'stool_b1', half(2))
-sit('bar_back_2', 'sitter_laptop', 'stool_b2', half(2))
-put('bar_back_laptop', 'laptop', 'bar_8_3', [0, 0], turnedAround(half(2)))
-
-// Tables along the left edge, chairs on the side toward the room
-items.push(
-    {id: 'table_l1', type: 'cafe_table', at: [1, 3]},
-    {id: 'table_l2', type: 'cafe_table', at: [1, 6]},
-    {id: 'table_l3', type: 'cafe_table', at: [1, 9]},
-)
-seated('left_1', 'sitter_phone', [2, 3], 1)
-put('left_1_mug', 'coffee_mug', 'table_l1', [0.2, 0.2], 0)
-seated('left_2', 'sitter_laptop', [2, 6], 1)
-put('left_2_laptop', 'laptop', 'table_l2', [0, 0], turnedAround(1))
-put('left_2_cup', 'cup', 'table_l2', [0.25, 0.25], 0)
-seated('left_3', 'sitter_laptop', [2, 9], 1)
-put('left_3_laptop', 'laptop', 'table_l3', [0, 0], turnedAround(1))
-seated('left_4', 'sitter_phone', [1, 10], 2)
-put('left_4_mug', 'coffee_mug', 'table_l3', [0.2, 0.25], 0)
-
-// Along the right edge
-items.push(
-    {id: 'table_r1', type: 'cafe_table', at: [14, 3]},
-    {id: 'table_r2', type: 'cafe_table', at: [14, 6]},
-    {id: 'table_r3', type: 'cafe_table', at: [14, 9]},
-)
-seated('right_1', 'sitter_laptop', [13, 3], 3)
-put('right_1_laptop', 'laptop', 'table_r1', [0, 0], turnedAround(3))
-put('right_1_mug', 'coffee_mug', 'table_r1', [-0.25, 0.25], 0)
-seated('right_2', 'sitter_phone', [13, 6], 3)
-put('right_2_cup', 'cup', 'table_r2', [0, 0.1], 0)
-seated('right_3', 'sitter_laptop', [13, 9], 3)
-put('right_3_laptop', 'laptop', 'table_r3', [0, 0], turnedAround(3))
-put('right_3_cup', 'cup', 'table_r3', [-0.25, 0.25], 0)
-seated('right_4', 'sitter_phone', [14, 10], 2)
-
-// Along the front edge
-items.push(
-    {id: 'table_f1', type: 'cafe_table', at: [3, 14]},
-    {id: 'table_f2', type: 'cafe_table', at: [6, 14]},
-    {id: 'table_f3', type: 'cafe_table', at: [9, 14]},
-    {id: 'table_f4', type: 'cafe_table', at: [12, 14]},
-)
-seated('front_1', 'sitter_laptop', [3, 13], 0)
-put('front_1_laptop', 'laptop', 'table_f1', [0, 0], turnedAround(0))
-put('front_1_mug', 'coffee_mug', 'table_f1', [0.25, -0.2], 0)
-seated('front_2', 'sitter_phone', [6, 13], 0)
-put('front_2_mug', 'coffee_mug', 'table_f2', [0, 0], 0)
-put('front_2_wallet', 'wallet', 'table_f2', [0.22, -0.12], 1)
-seated('front_3', 'sitter_phone', [9, 13], 0)
-put('front_3_cup', 'cup', 'table_f3', [0, 0.05], 0)
-seated('front_4', 'sitter_laptop', [12, 13], 0)
-put('front_4_laptop', 'laptop', 'table_f4', [0, 0], turnedAround(0))
-
-// People on their feet, each on a loop of their own that keeps clear of the others and the furniture
-walk('walker_1', 'walker', [[3, 9], [5, 9], [5, 12], [3, 12]], 0.8)
-walk('walker_2', 'walker_phone', [[7, 9], [9, 9], [9, 11], [7, 11]], 0.6)
-walk('walker_3', 'walker', [[11, 10], [12, 10], [12, 12], [11, 12]], 0.9)
-walk('walker_4', 'walker_phone', [[3, 4], [3, 8]], 0.5)
-walk('walker_5', 'walker_phone', [[12, 4], [12, 8]], 0.55)
-walk('walker_6', 'walker', [[6, 1], [9, 1]], 0.9)
-
-// The player starts right in the front right corner, facing into the shop
-stand('player_1', 'player', [15, 15], 2)
-
-// Dressing
-items.push(
-    {id: 'rug', type: 'rug', at: [7, 13]},
-    {id: 'plant_l', type: 'plant', at: [0, 1]},
-    {id: 'plant_r', type: 'plant', at: [15, 1]},
-    {id: 'trash', type: 'trash_can', at: [15, 13]},
-)
-
-// Who owns what. The things on a table belong to the person sitting at it (laptops, mugs and cups), the
-// bar's to whoever is at the bar, and the wallet to a walker who left it behind: it only counts as owned while the owner is
-// within 1.5 blocks of it, so the wallet can be taken once the walker has gone off on their loop.
-const OWNERS = {
-    left_1_mug: 'left_1',
-    left_2_cup: 'left_2',
-    left_4_mug: 'left_4',
-    right_1_mug: 'right_1',
-    right_2_cup: 'right_2',
-    right_3_cup: 'right_3',
-    front_1_mug: 'front_1',
-    front_2_mug: 'front_2',
-    front_3_cup: 'front_3',
-    front_2_wallet: 'walker_1',
-    left_2_laptop: 'left_2',
-    left_3_laptop: 'left_3',
-    right_1_laptop: 'right_1',
-    right_3_laptop: 'right_3',
-    front_1_laptop: 'front_1',
-    front_4_laptop: 'front_4',
-    bar_left_laptop: 'bar_left_2',
-    bar_right_laptop: 'bar_right_2',
-    bar_back_laptop: 'bar_back_2',
-    bar_mug_1: 'barista_1',
-    bar_left_mug: 'bar_left_1',
-    bar_right_cup: 'bar_right_1',
-}
-for (const item of items) {
-    if (item.id in OWNERS) {
-        item.owner = OWNERS[item.id]
-    }
-}
+const BARISTA_RULES = [
+    {
+        when: 'spoken_to',
+        say: ["Fine, I'm taking my break.", 'Wow. I am clocking out.', 'Ugh, whatever. Bye.'],
+        leave: true,
+    },
+    {
+        when: 'splashed',
+        say: ['Hey! I just cleaned that! I quit!', 'You got it all over me! I am done.'],
+        leave: true,
+    },
+    {
+        when: 'item_grabbed',
+        say: ['Back off, bucket of bolts!', 'That is for customers, not you!'],
+    },
+]
 
 export const level = {
     id: 'coffee_shop',
     name: 'Coffee Shop',
+    description: 'A busy morning. Nothing to do but look around.',
 
     // Where people leave by, at the front of the shop
     exit: [8, 15],
-    description: 'A busy morning. Nothing to do but look around.',
 
-    items,
+    items: [
+        // The back wall
+        {id: 'wall_0', type: 'wall', at: [0, 0]},
+        {id: 'wall_1', type: 'wall', at: [1, 0]},
+        {id: 'wall_2', type: 'wall', at: [2, 0]},
+        {id: 'wall_3', type: 'wall', at: [3, 0]},
+        {id: 'wall_4', type: 'wall', at: [4, 0]},
+        {id: 'wall_5', type: 'wall', at: [5, 0]},
+        {id: 'wall_6', type: 'wall', at: [6, 0]},
+        {id: 'wall_7', type: 'wall', at: [7, 0]},
+        {id: 'wall_8', type: 'wall', at: [8, 0]},
+        {id: 'wall_9', type: 'wall', at: [9, 0]},
+        {id: 'wall_10', type: 'wall', at: [10, 0]},
+        {id: 'wall_11', type: 'wall', at: [11, 0]},
+        {id: 'wall_12', type: 'wall', at: [12, 0]},
+        {id: 'wall_13', type: 'wall', at: [13, 0]},
+        {id: 'wall_14', type: 'wall', at: [14, 0]},
+        {id: 'wall_15', type: 'wall', at: [15, 0]},
+
+        // The bar: a U open toward the back wall. The ids are the cells they cover.
+        {id: 'bar_5_7', type: 'counter', at: [5, 7]},
+        {id: 'bar_6_7', type: 'counter', at: [6, 7]},
+        {id: 'bar_7_7', type: 'counter', at: [7, 7]},
+        {id: 'bar_8_7', type: 'counter', at: [8, 7]},
+        {id: 'bar_9_7', type: 'counter', at: [9, 7]},
+        {id: 'bar_10_7', type: 'counter', at: [10, 7]},
+        {id: 'bar_5_6', type: 'counter', at: [5, 6]},
+        {id: 'bar_5_5', type: 'counter', at: [5, 5]},
+        {id: 'bar_5_4', type: 'counter', at: [5, 4]},
+        {id: 'bar_5_3', type: 'counter', at: [5, 3]},
+        {id: 'bar_10_6', type: 'counter', at: [10, 6]},
+        {id: 'bar_10_5', type: 'counter', at: [10, 5]},
+        {id: 'bar_10_4', type: 'counter', at: [10, 4]},
+        {id: 'bar_10_3', type: 'counter', at: [10, 3]},
+
+        // Behind the bar
+        {id: 'machine_1', type: 'espresso_machine', on: 'bar_9_7', offset: [0, 0], rotate: 2},
+        {id: 'machine_2', type: 'espresso_machine', on: 'bar_6_7', offset: [0, 0], rotate: 2},
+        {id: 'barista_1', type: 'barista', at: [8, 6], rotate: 0, rules: BARISTA_RULES},
+        {id: 'barista_2', type: 'barista', at: [6, 5], rotate: 1, rules: BARISTA_RULES},
+        {id: 'bar_mug_1', type: 'coffee_mug', on: 'bar_8_7', offset: [0, -0.1], rotate: 0, owner: 'barista_1'},
+
+        // Stools around the outside of the bar, and who is on them
+        {id: 'stool_l1', type: 'stool', at: [11, 5]},
+        {id: 'stool_l2', type: 'stool', at: [11, 4]},
+        {id: 'stool_r1', type: 'stool', at: [4, 5]},
+        {id: 'stool_r2', type: 'stool', at: [4, 4]},
+        {id: 'stool_b1', type: 'stool', at: [9, 8]},
+        {id: 'stool_b2', type: 'stool', at: [7, 8]},
+
+        {id: 'bar_left_1', type: 'sitter_phone', on: 'stool_l1', rotate: 1, rules: SITTER_RULES},
+        {id: 'bar_left_mug', type: 'coffee_mug', on: 'bar_10_5', offset: [0, 0], rotate: 0, owner: 'bar_left_1'},
+        {id: 'bar_left_2', type: 'sitter_laptop', on: 'stool_l2', rotate: 1, rules: SITTER_RULES},
+        {id: 'bar_left_laptop', type: 'laptop', on: 'bar_10_4', offset: [0, 0], rotate: 3, owner: 'bar_left_2'},
+        {id: 'bar_right_1', type: 'sitter_phone', on: 'stool_r1', rotate: 3, rules: SITTER_RULES},
+        {id: 'bar_right_cup', type: 'cup', on: 'bar_5_5', offset: [0, 0], rotate: 0, owner: 'bar_right_1'},
+        {id: 'bar_right_2', type: 'sitter_laptop', on: 'stool_r2', rotate: 3, rules: SITTER_RULES},
+        {id: 'bar_right_laptop', type: 'laptop', on: 'bar_5_4', offset: [0, 0], rotate: 1, owner: 'bar_right_2'},
+        {id: 'bar_back_1', type: 'sitter_phone', on: 'stool_b1', rotate: 0, rules: SITTER_RULES},
+        {id: 'bar_back_2', type: 'sitter_laptop', on: 'stool_b2', rotate: 0, rules: SITTER_RULES},
+        {id: 'bar_back_laptop', type: 'laptop', on: 'bar_7_7', offset: [0, 0], rotate: 2, owner: 'bar_back_2'},
+
+        // Tables along the left edge, chairs on the side toward the room
+        {id: 'table_l1', type: 'cafe_table', at: [1, 3]},
+        {id: 'table_l2', type: 'cafe_table', at: [1, 6]},
+        {id: 'table_l3', type: 'cafe_table', at: [1, 9]},
+
+        {id: 'left_1_chair', type: 'chair', at: [2, 3], rotate: 1},
+        {id: 'left_1', type: 'sitter_phone', on: 'left_1_chair', rotate: 1, rules: SITTER_RULES},
+        {id: 'left_1_mug', type: 'coffee_mug', on: 'table_l1', offset: [0.2, 0.2], rotate: 0, owner: 'left_1'},
+
+        {id: 'left_2_chair', type: 'chair', at: [2, 6], rotate: 1},
+        {id: 'left_2', type: 'sitter_laptop', on: 'left_2_chair', rotate: 1, rules: SITTER_RULES},
+        {id: 'left_2_laptop', type: 'laptop', on: 'table_l2', offset: [0, 0], rotate: 3, owner: 'left_2'},
+        {id: 'left_2_cup', type: 'cup', on: 'table_l2', offset: [0.25, 0.25], rotate: 0, owner: 'left_2'},
+
+        {id: 'left_3_chair', type: 'chair', at: [2, 9], rotate: 1},
+        {id: 'left_3', type: 'sitter_laptop', on: 'left_3_chair', rotate: 1, rules: SITTER_RULES},
+        {id: 'left_3_laptop', type: 'laptop', on: 'table_l3', offset: [0, 0], rotate: 3, owner: 'left_3'},
+
+        {id: 'left_4_chair', type: 'chair', at: [1, 10], rotate: 2},
+        {id: 'left_4', type: 'sitter_phone', on: 'left_4_chair', rotate: 2, rules: SITTER_RULES},
+        {id: 'left_4_mug', type: 'coffee_mug', on: 'table_l3', offset: [0.2, 0.25], rotate: 0, owner: 'left_4'},
+
+        // Along the right edge
+        {id: 'table_r1', type: 'cafe_table', at: [14, 3]},
+        {id: 'table_r2', type: 'cafe_table', at: [14, 6]},
+        {id: 'table_r3', type: 'cafe_table', at: [14, 9]},
+
+        {id: 'right_1_chair', type: 'chair', at: [13, 3], rotate: 3},
+        {id: 'right_1', type: 'sitter_laptop', on: 'right_1_chair', rotate: 3, rules: SITTER_RULES},
+        {id: 'right_1_laptop', type: 'laptop', on: 'table_r1', offset: [0, 0], rotate: 1, owner: 'right_1'},
+        {id: 'right_1_mug', type: 'coffee_mug', on: 'table_r1', offset: [-0.25, 0.25], rotate: 0, owner: 'right_1'},
+
+        {id: 'right_2_chair', type: 'chair', at: [13, 6], rotate: 3},
+        {id: 'right_2', type: 'sitter_phone', on: 'right_2_chair', rotate: 3, rules: SITTER_RULES},
+        {id: 'right_2_cup', type: 'cup', on: 'table_r2', offset: [0, 0.1], rotate: 0, owner: 'right_2'},
+
+        {id: 'right_3_chair', type: 'chair', at: [13, 9], rotate: 3},
+        {id: 'right_3', type: 'sitter_laptop', on: 'right_3_chair', rotate: 3, rules: SITTER_RULES},
+        {id: 'right_3_laptop', type: 'laptop', on: 'table_r3', offset: [0, 0], rotate: 1, owner: 'right_3'},
+        {id: 'right_3_cup', type: 'cup', on: 'table_r3', offset: [-0.25, 0.25], rotate: 0, owner: 'right_3'},
+
+        {id: 'right_4_chair', type: 'chair', at: [14, 10], rotate: 2},
+        {id: 'right_4', type: 'sitter_phone', on: 'right_4_chair', rotate: 2, rules: SITTER_RULES},
+
+        // Along the front edge
+        {id: 'table_f1', type: 'cafe_table', at: [3, 14]},
+        {id: 'table_f2', type: 'cafe_table', at: [6, 14]},
+        {id: 'table_f3', type: 'cafe_table', at: [9, 14]},
+        {id: 'table_f4', type: 'cafe_table', at: [12, 14]},
+
+        {id: 'front_1_chair', type: 'chair', at: [3, 13], rotate: 0},
+        {id: 'front_1', type: 'sitter_laptop', on: 'front_1_chair', rotate: 0, rules: SITTER_RULES},
+        {id: 'front_1_laptop', type: 'laptop', on: 'table_f1', offset: [0, 0], rotate: 2, owner: 'front_1'},
+        {id: 'front_1_mug', type: 'coffee_mug', on: 'table_f1', offset: [0.25, -0.2], rotate: 0, owner: 'front_1'},
+
+        {id: 'front_2_chair', type: 'chair', at: [6, 13], rotate: 0},
+        {id: 'front_2', type: 'sitter_phone', on: 'front_2_chair', rotate: 0, rules: SITTER_RULES},
+        {id: 'front_2_mug', type: 'coffee_mug', on: 'table_f2', offset: [0, 0], rotate: 0, owner: 'front_2'},
+        // Left behind by a walker: it only counts as owned while walker_1 is near it
+        {id: 'front_2_wallet', type: 'wallet', on: 'table_f2', offset: [0.22, -0.12], rotate: 1, owner: 'walker_1'},
+
+        {id: 'front_3_chair', type: 'chair', at: [9, 13], rotate: 0},
+        {id: 'front_3', type: 'sitter_phone', on: 'front_3_chair', rotate: 0, rules: SITTER_RULES},
+        {id: 'front_3_cup', type: 'cup', on: 'table_f3', offset: [0, 0.05], rotate: 0, owner: 'front_3'},
+
+        {id: 'front_4_chair', type: 'chair', at: [12, 13], rotate: 0},
+        {id: 'front_4', type: 'sitter_laptop', on: 'front_4_chair', rotate: 0, rules: SITTER_RULES},
+        {id: 'front_4_laptop', type: 'laptop', on: 'table_f4', offset: [0, 0], rotate: 2, owner: 'front_4'},
+
+        // People on their feet, each on a loop of their own that keeps clear of the others and the furniture
+        {id: 'walker_1', type: 'walker', path: [[3, 9], [5, 9], [5, 12], [3, 12]], speed: 0.8, rules: WALKER_RULES},
+        {id: 'walker_2', type: 'walker_phone', path: [[7, 9], [9, 9], [9, 11], [7, 11]], speed: 0.6, rules: WALKER_RULES},
+        {id: 'walker_3', type: 'walker', path: [[11, 10], [12, 10], [12, 12], [11, 12]], speed: 0.9, rules: WALKER_RULES},
+        {id: 'walker_4', type: 'walker_phone', path: [[3, 4], [3, 8]], speed: 0.5, rules: WALKER_RULES},
+        {id: 'walker_5', type: 'walker_phone', path: [[12, 4], [12, 8]], speed: 0.55, rules: WALKER_RULES},
+        {id: 'walker_6', type: 'walker', path: [[6, 1], [9, 1]], speed: 0.9, rules: WALKER_RULES},
+
+        // The player starts right in the front right corner, facing into the shop
+        {id: 'player_1', type: 'player', at: [15, 15], rotate: 2},
+
+        // Dressing
+        {id: 'rug', type: 'rug', at: [7, 13]},
+        {id: 'plant_l', type: 'plant', at: [0, 1]},
+        {id: 'plant_r', type: 'plant', at: [15, 1]},
+        {id: 'trash', type: 'trash_can', at: [15, 13]},
+    ],
 
     conditions: [],
 }

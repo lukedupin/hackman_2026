@@ -33,7 +33,7 @@ export const GameWindow = props => {
                     </div>
                     <div className="text-right">
                         <div className={`text-sm font-medium ${PHASES[phase].color}`}>{PHASES[phase].label}</div>
-                        <div className="font-mono text-xs text-white/50">{phase === 'interactive' ? 'Arrow keys move' : line === null ? 'Line -' : `Line ${line}`}</div>
+                        <div className="font-mono text-xs text-white/50">{phase === 'interactive' ? 'Arrows move, space waits' : line === null ? 'Line -' : `Line ${line}`}</div>
                     </div>
                 </div>
 

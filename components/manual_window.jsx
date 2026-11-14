@@ -106,7 +106,8 @@ export const ManualWindow = () => (
             <Heading>Interactive</Heading>
             <p className="text-white/80">
                 The Interactive button in the game window starts the level over and lets you drive the robot yourself.
-                The arrow keys move it (up is n, right is e, down is s, left is w). Left-click an item for what scan()
+                The arrow keys move it from the way it faces (up is forward, down back, left and right), and are written
+                into your code as the compass direction that means, like <Code>move('w')</Code>. The space bar waits a tick. Left-click an item for what scan()
                 would tell you about it, and right-click it for a window of the things the robot can do with it. Each
                 takes a tick, as in code. Each one is added to the end of your code and run, and the game is paused between
                 them: it only moves while a line is running, and anything you press meanwhile is ignored. Press the

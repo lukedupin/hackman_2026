@@ -8,6 +8,10 @@
 //       items        what starts on the grid, each one of:
 //                      {id, type, at: [col, row], rotate?}          on the ground; `at` is the top-left cell it covers
 //                      {id, type, on: 'item id', offset?, rotate?}  on top of an earlier item; `offset` is [x, z] in cells
+//                    People can also have {path, speed} (a loop to walk, see coffee_shop.js), `owner` (a person's
+//                    id) and `rules`: [{when, say?, leave?}], what they do when the robot speaks to them
+//                    ('spoken_to'), spills a drink beside them ('splashed') or tries to take their things
+//                    ('item_grabbed'). A person with no rule for an event does nothing about it.
 //                    `rotate` is quarter turns clockwise. Any other field is handed to the asset, which
 //                    is how people get their {skin, shirt, pants, hair}.
 //       exit         optional, [col, row] people walk to when they leave (without one, the nearest edge)

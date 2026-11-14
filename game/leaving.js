@@ -6,15 +6,6 @@ import {speak} from './speech.js'
 // around the furniture, and is gone: taken off the grid, owning nothing from then on.
 const LEAVE_SPEED = 1.0   // blocks a second
 
-const GRUMBLES = [
-    "Fine, fine, I'm going.",
-    'Wow. Rude. I am leaving.',
-    "I didn't want to sit here anyway.",
-    'Ugh, whatever. Bye.',
-    'Okay okay, I am leaving!',
-    'Weirdo. I am out of here.',
-]
-
 const WALKING_TYPES = ['walker', 'walker_phone']
 
 const dispose = object => {
@@ -82,9 +73,9 @@ export const vanish = (state, item) => {
     item.cells = []
 }
 
-// Tells a person to get up and go. They say something grumpy as they do: `line`, or one of the usual
-// grumbles. Returns false if they have no way out, and true if they are leaving (or already were).
-export const sendAway = (state, item, line = GRUMBLES[Math.floor(Math.random() * GRUMBLES.length)]) => {
+// Tells a person to get up and go (a level's rules decide when, see rules.js). They say `line` as they do,
+// if there is one. Returns false if they have no way out, and true if they are leaving (or already were).
+export const sendAway = (state, item, line = null) => {
     if (item.leaving || item.gone) {
         return true
     }
@@ -116,7 +107,9 @@ export const sendAway = (state, item, line = GRUMBLES[Math.floor(Math.random() *
     const lengths = route.slice(1).map((point, i) => point.distanceTo(route[i]))
     const total = lengths.reduce((sum, length) => sum + length, 0)
 
-    speak(state, item, line)
+    if (line) {
+        speak(state, item, line)
+    }
 
     if (total === 0) {
         vanish(state, item)

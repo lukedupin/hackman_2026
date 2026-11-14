@@ -297,7 +297,7 @@ export const CodeWindow = props => {
                     </button>
                     <span className="text-xs text-slate-400">
                         {interactive
-                            ? 'Arrow keys add move lines, right-click an item for more. Each line is added here and run.'
+                            ? 'Arrows move (up is forward), space waits, right-click an item for more. Each is added here and run.'
                             : 'Runs this program, then lets you add lines by hand.'}
                     </span>
                 </div>

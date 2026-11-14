@@ -7,7 +7,7 @@ import {createGrid} from './components/grid.js'
 import {LEVELS} from './levels/index.js'
 import {WORLDS, FIRST_LEVEL, worldOf} from './worlds/index.js'
 import {loadLevel, checkLevel, updateLevel, nearbyItems, NEARBY_RADIUS} from './game/level_runner.js'
-import {createRun, lookAt} from './game/robot.js'
+import {createRun, lookAt, compassFor} from './game/robot.js'
 import {runPython, loadBrython, isBrythonReady} from './game/python.js'
 import {createClock, resetClock, gameDeltaOf, advanceClock, ticksOf, TICK_SECONDS} from './game/clock.js'
 import {CodeWindow, STARTER_CODE, OPTION_STYLE} from './components/code_window.jsx'
@@ -436,18 +436,43 @@ const Game = props => {
             return
         }
 
-        const directions = {ArrowUp: 'n', ArrowRight: 'e', ArrowDown: 's', ArrowLeft: 'w'}
+        // The arrows are relative to the way the robot faces: up is forward, down back, left and right. The
+        // line that gets written says the compass direction that is right now, as in move('w'). The space
+        // bar waits a tick.
+        const relative = {ArrowUp: 'f', ArrowDown: 'b', ArrowLeft: 'l', ArrowRight: 'r'}
+        const typing = e => ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)
+
         const onKey = e => {
-            const direction = directions[e.key]
-            if (!direction || e.ctrlKey || e.metaKey || e.altKey || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
+            if ((!(e.key in relative) && e.key !== ' ') || e.ctrlKey || e.metaKey || e.altKey || typing(e)) {
                 return
             }
             e.preventDefault()
 
-            addLine(`move('${direction}')`)
+            if (e.key === ' ') {
+                if (!e.repeat) {
+                    addLine('wait()')
+                }
+                return
+            }
+
+            const compass = compassFor(stateRef.current(), relative[e.key])
+            if (compass) {
+                addLine(`move('${compass}')`)
+            }
+        }
+
+        // A space on a focused button (the Interactive one, usually) would press it when let go
+        const onKeyUp = e => {
+            if (e.key === ' ' && !typing(e)) {
+                e.preventDefault()
+            }
         }
         window.addEventListener('keydown', onKey)
-        return () => window.removeEventListener('keydown', onKey)
+        window.addEventListener('keyup', onKeyUp)
+        return () => {
+            window.removeEventListener('keydown', onKey)
+            window.removeEventListener('keyup', onKeyUp)
+        }
     }, [phase])
 
     // Starts the level over and runs the program on it from the start: at full speed, or (when

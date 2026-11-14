@@ -397,12 +397,16 @@ async def _robot(name, *args):
 async def move(direction):
     return await _robot('move', direction)
 
-class Thing(dict):
-    def __getattr__(self, key):
-        try:
-            return self[key]
-        except KeyError:
-            raise AttributeError(key)
+class Thing:
+    def __init__(self, fields):
+        for key, value in fields.items():
+            setattr(self, key, value)
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def __repr__(self):
+        return 'Thing(' + ', '.join([key + '=' + repr(value) for key, value in self.__dict__.items()]) + ')'
 
 async def scan():
     return [Thing(item) for item in await _robot('scan')]

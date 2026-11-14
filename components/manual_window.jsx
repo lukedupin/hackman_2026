@@ -3,7 +3,7 @@ import {FloatingWindow} from './floating_window.jsx'
 
 // The quick summary at the top: each function and a few words
 const SUMMARY = [
-    ['move(direction)', 'step one block: n, e, s or w'],
+    ['move(direction)', 'step one block: n e s w, or f b l r from where you face'],
     ['scan()', 'list what is within 3 blocks'],
     ['pickup(id)', 'take a small thing next to you'],
     ['say(id, text)', 'talk to a person'],
@@ -16,12 +16,12 @@ const SUMMARY = [
 // What the robot's code can call (see game/robot.js). `call` is how it is written, `does` what it does.
 const FUNCTIONS = [
     {
-        call: "move('n' | 'e' | 's' | 'w')",
-        does: "Take one step. n is toward the back wall, e toward the right, s toward the front, w toward the left. Gives back a dict: {'ok': True}, or {'ok': False, 'reason': ...} if something is in the way.",
+        call: "move('n' | 'e' | 's' | 'w' | 'f' | 'b' | 'l' | 'r')",
+        does: "Take one step. n is toward the back wall, e toward the right, s toward the front, w toward the left. Or go from the way the robot is facing: f forward, b back, l left, r right. Gives back a dict: {'ok': True}, or {'ok': False, 'reason': ...} if something is in the way.",
     },
     {
         call: 'scan()',
-        does: "Look around. Gives back a list of the things within 3 blocks, each one a dict with 'name', 'id', 'owner', 'owned' and 'away'.",
+        does: "Look around. Gives back a list of the things within 3 blocks, each one an object with the fields name, id, owner, owned and away.",
     },
     {
         call: 'pickup(id)',
@@ -108,7 +108,9 @@ export const ManualWindow = () => (
                 The Interactive button in the game window starts the level over and lets you drive the robot yourself.
                 The arrow keys move it (up is n, right is e, down is s, left is w). Left-click an item for what scan()
                 would tell you about it, and right-click it for a window of the things the robot can do with it. Each
-                takes a tick, as in code. Press the button again, or Restart, to stop.
+                takes a tick, as in code. Each one is added to the end of your code and run, and the game is paused between
+                them: it only moves while a line is running, and anything you press meanwhile is ignored. Press the
+                button again, or Restart, to stop.
             </p>
 
             <Heading>The robot</Heading>
@@ -122,7 +124,7 @@ export const ManualWindow = () => (
             </div>
 
             <Heading>What scan() tells you</Heading>
-            <p className="mb-2 text-white/80">Each thing in the list is a dict, so <Code>thing['id']</Code> is its id.</p>
+            <p className="mb-2 text-white/80">Each thing in the list is an object, so <Code>thing.id</Code> is its id.</p>
             <div className="space-y-2">
                 {THINGS.map(([field, text]) => (
                     <div key={field}>

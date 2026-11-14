@@ -7,7 +7,7 @@ import {createGrid} from './components/grid.js'
 import {LEVELS} from './levels/index.js'
 import {WORLDS, FIRST_LEVEL, worldOf} from './worlds/index.js'
 import {loadLevel, checkLevel, updateLevel, nearbyItems, NEARBY_RADIUS} from './game/level_runner.js'
-import {createRun, createRobot, lookAt} from './game/robot.js'
+import {createRun, lookAt} from './game/robot.js'
 import {runPython, loadBrython, isBrythonReady} from './game/python.js'
 import {createClock, resetClock, gameDeltaOf, advanceClock, ticksOf, TICK_SECONDS} from './game/clock.js'
 import {CodeWindow, STARTER_CODE, OPTION_STYLE} from './components/code_window.jsx'
@@ -229,7 +229,8 @@ const LevelPanel = props => {
             <select
                 value={levelId}
                 onChange={e => onLevel(e.target.value)}
-                className="mt-1 block w-full rounded-md border-0 bg-white/10 py-1.5 text-sm text-white focus:ring-2 focus:ring-white/40"
+                style={OPTION_STYLE}
+                className="mt-1 block w-full rounded-md border-0 py-1.5 text-sm text-white focus:ring-2 focus:ring-white/40"
             >
                 {WORLDS.map(world => (
                     <optgroup key={world.id} label={world.name} style={OPTION_STYLE}>
@@ -338,11 +339,14 @@ const Game = props => {
         }
     }
 
-    // Interactive mode: you drive the robot with the arrow keys and the item windows, using the same robot
-    // functions a program does. manualRef is {run, robot, busy, pending}: pending is one more action
-    // waiting for the one in progress.
+    // Interactive mode: the program runs, and then every arrow key or action picked in the item window adds a
+    // line of code to the end of it (move('n'), pickup('mug_1')...) and runs just that line, on the game
+    // as it stands. The game is paused between lines, and a line is not taken while another is running.
+    // manualRef is {run, busy}.
     const manualRef = useRef(null)
     const interactiveRef = useRef(null)
+    const codeRef = useRef(code)                      // the code as of the latest line added
+    codeRef.current = code
     const [busy, setBusy] = useState(false)
     const [info, setInfo] = useState(null)            // {data, at, key}: the window from a left click
     const [actions, setActions] = useState(null)      // the same, from a right click
@@ -355,72 +359,54 @@ const Game = props => {
         setActions(null)
     }
 
-    // Does one robot function ('move', 'pickup'...), or lines it up after the one in progress
-    const perform = async (call, args) => {
+    // Adds a line of code at the end of the program and runs it, or lines it up after the one running
+    const addLine = async text => {
         const manual = manualRef.current
-        if (!manual?.robot) {
+        if (!manual) {
             return
         }
+        // Nothing new is taken while a line is running
         if (manual.busy) {
-            manual.pending = [call, args]
             return
         }
 
         manual.busy = true
         setBusy(true)
-        try {
-            await manual.robot[call](...args)
-        }
-        catch (err) {
-            if (manualRef.current === manual) {
-                log('error', err.message)
+
+        // The game only runs while a line does: time starts for it, and stops again when it is over
+        clock.mode = 'live'
+
+        const before = codeRef.current
+        const start = before === '' || before.endsWith('\n') ? before : `${before}\n`
+        const lineNumber = start.split('\n').length
+        codeRef.current = `${start}${text}\n`
+        setCode(codeRef.current)
+        setLine(lineNumber)
+
+        // The line is run by itself, so what it reports is about line 1: say which line it really is
+        const lineLog = (kind, message) => {
+            if (kind !== 'info' || message !== 'Done.') {
+                log(kind, message.replace(/^Line 1:/, `Line ${lineNumber}:`))
             }
         }
-        manual.busy = false
+        await runPython(text, () => stateRef.current(), lineLog, manual.run, clock)
+
         if (manualRef.current !== manual) {
             return
         }
+        manual.busy = false
+        clock.mode = 'step'
+        clock.budget = 0
         setBusy(false)
-        const next = manual.pending
-        manual.pending = null
-        if (next) {
-            perform(...next)
-        }
+        setLine(null)
     }
 
-    const interactive = async () => {
+    const interactive = () => {
         if (phase === 'interactive') {
             restart()
-            return
         }
-
-        runRef.current?.stop()
-        runRef.current = null
-        stopInteractive()
-
-        const run = createRun()
-        const manual = {run, robot: null, busy: false, pending: null}
-        manualRef.current = manual
-        resetClock(clock)
-        setTicks(0)
-        setLine(null)
-        setOutput([])
-        setPhase('interactive')
-
-        await reloadLevel(run)
-        if (manualRef.current !== manual) {
-            return
-        }
-
-        // Game time runs as it does in real time, and the robot's functions wait on it
-        clock.counting = true
-        clock.mode = 'live'
-        clock.budget = 0
-        try {
-            manual.robot = createRobot(() => stateRef.current(), log, run, clock)
-        }
-        catch (err) {
-            log('error', err.message)
+        else {
+            startProgram(false, true)
         }
     }
 
@@ -458,27 +444,27 @@ const Game = props => {
             }
             e.preventDefault()
 
-            // A held key repeats, but not faster than the robot can step
-            if (e.repeat && manualRef.current?.busy) {
-                return
-            }
-            perform('move', [direction])
+            addLine(`move('${direction}')`)
         }
         window.addEventListener('keydown', onKey)
         return () => window.removeEventListener('keydown', onKey)
     }, [phase])
 
     // Starts the level over and runs the program on it from the start: at full speed, or (when
-    // `stepping`) paused with just the first tick allowed, for Step to carry on from
-    const startProgram = async stepping => {
+    // `stepping`) paused with just the first tick allowed, for Step to carry on from. With `stay` it goes on
+    // into interactive mode once the program is over.
+    const startProgram = async (stepping, stay = false) => {
         stopInteractive()
         const run = createRun()
         runRef.current = run
+        const manual = stay ? {run, busy: true} : null
+        manualRef.current = manual
         resetClock(clock)
         setTicks(0)
         setLine(null)
         setOutput([])
-        setPhase(stepping ? 'paused' : 'running')
+        setPhase(stay ? 'interactive' : stepping ? 'paused' : 'running')
+        setBusy(stay)
 
         // Python is loaded the first time it is needed, before the game starts counting
         if (!isBrythonReady()) {
@@ -490,6 +476,7 @@ const Game = props => {
                 log('error', err.message)
                 if (runRef.current === run) {
                     runRef.current = null
+                    stopInteractive()
                     setPhase('finished')
                 }
                 return
@@ -511,6 +498,17 @@ const Game = props => {
 
         // The program is over (unless a restart already ended this run): time stops being counted and the
         // scene carries on at normal speed
+        if (stay && runRef.current === run && !run.stopped) {
+            // The program is over; from here the player adds lines. The clock keeps counting for them.
+            // The game now waits for the player's input
+            clock.mode = 'step'
+            clock.budget = 0
+            setLine(null)
+            manual.busy = false
+            setBusy(false)
+            return
+        }
+
         if (runRef.current === run) {
             runRef.current = null
             clock.counting = false
@@ -577,6 +575,7 @@ const Game = props => {
             <GameWindow phase={phase} ticks={ticks} line={line} onRun={run} onStep={step} onRestart={restart} onInteractive={interactive} />
             <CodeWindow
                 programs={store.programs} currentId={program.id} onSelect={selectProgram} onNew={newProgram}
+                interactive={phase === 'interactive'} onInteractive={interactive}
                 code={code} onCode={setCode} onRun={run} currentLine={line} output={output} />
             <ManualWindow />
             <NearbyWindow items={nearby} />
@@ -585,7 +584,7 @@ const Game = props => {
             <ItemActionsWindow
                 key={actions.key} info={actions.data} at={actions.at} busy={busy}
                 onAct={(call, args) => {
-                    perform(call, args)
+                    addLine(`${call}(${args.map(arg => `'${arg}'`).join(', ')})`)
                     setActions(null)
                 }}
                 onClose={() => setActions(null)}

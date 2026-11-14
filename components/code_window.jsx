@@ -10,7 +10,7 @@ export const STARTER_CODE = `for step in range(3):
 things = scan()
 print('I can see', len(things), 'things')
 for thing in things:
-    print(thing['name'], thing['id'], thing['away'])
+    print(thing.name, thing.id, thing.away)
 `
 
 const LINE_COLORS = {
@@ -68,6 +68,7 @@ const vimKey = e => {
 // game (its Run and Step buttons run it). The editor takes vim keys: it starts in normal mode, i
 // types, Esc goes back (see vim.js).
 //
+//   interactive, onInteractive  whether interactive mode is on, and what the button under the code does
 //   programs      [{id, name}], every program the player has, for the picker in the title; currentId is the one open
 //   onSelect, onNew  called with a program's id when another is picked, and with nothing for the + button
 //   code, onCode  the code, and a function that is given the new code when it is edited
@@ -75,7 +76,7 @@ const vimKey = e => {
 //   currentLine   the line the running program is on (counting from 1), or null; its number is lit up
 //   output        [{kind, text}] to show under the editor, kind being log, action, info or error
 export const CodeWindow = props => {
-    const {programs, currentId, onSelect, onNew, code, onCode: setCode, onRun, currentLine, output} = props
+    const {interactive, onInteractive, programs, currentId, onSelect, onNew, code, onCode: setCode, onRun, currentLine, output} = props
 
     const [, setTick] = useState(0)                // bumped to redraw after vim changes its own state
     const vimRef = useRef(null)
@@ -208,7 +209,8 @@ export const CodeWindow = props => {
                 value={currentId}
                 onChange={e => onSelect(e.target.value)}
                 title="Your robot programs"
-                className="cursor-pointer rounded border-0 bg-white/10 py-0.5 pl-2 pr-7 text-xs font-medium normal-case tracking-normal text-white focus:ring-1 focus:ring-white/40"
+                style={OPTION_STYLE}
+                className="cursor-pointer rounded border-0 py-0.5 pl-2 pr-7 text-xs font-medium normal-case tracking-normal text-white focus:ring-1 focus:ring-white/40"
             >
                 {programs.map(program => (
                     <option key={program.id} value={program.id} style={OPTION_STYLE}>{program.name}</option>
@@ -281,6 +283,23 @@ export const CodeWindow = props => {
                             className="absolute inset-0 h-full w-full resize-none whitespace-pre border-0 bg-transparent p-2 font-mono text-sm leading-5 text-transparent caret-emerald-300 selection:bg-amber-400/40 focus:ring-0"
                         />
                     </div>
+                </div>
+
+                {/* Under the last line of code: interactive mode runs the program, then adds a line of code
+                    for each arrow key or action you pick, and runs it */}
+                <div className="flex shrink-0 items-center gap-3 border-t border-white/10 bg-black/20 px-2 py-1.5">
+                    <button
+                        onClick={onInteractive}
+                        className={`rounded px-3 py-1 text-xs font-medium text-white ${interactive ? 'bg-fuchsia-500/80 hover:bg-fuchsia-500' : 'bg-white/10 hover:bg-white/20'}`}
+                        style={interactive ? undefined : {backgroundColor: '#334155'}}
+                    >
+                        {interactive ? 'Stop interactive' : 'Interactive'}
+                    </button>
+                    <span className="text-xs text-slate-400">
+                        {interactive
+                            ? 'Arrow keys add move lines, right-click an item for more. Each line is added here and run.'
+                            : 'Runs this program, then lets you add lines by hand.'}
+                    </span>
                 </div>
 
                 <div className="flex shrink-0 items-center gap-3 bg-black/30 px-2 py-0.5 font-mono text-xs">

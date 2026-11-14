@@ -9,7 +9,8 @@ import {TICK_SECONDS, waitTicks} from './clock.js'
 // functions (createRobot below); game/python.js makes them available to the player's Python as plain
 // functions that look synchronous, and converts what they return into Python dicts and lists.
 //
-//   move(direction)   one step 'n', 'e', 's' or 'w' (n is toward the back wall, e toward the right).
+//   move(direction)   one step 'n', 'e', 's' or 'w' (n is toward the back wall, e toward the right), or
+//                     'f', 'b', 'l' or 'r': forward, back, left or right of the way the robot faces.
 //                     Resolves to {ok: true}, or {ok: false, reason} if something is in the way.
 //   scan()            the items within 3 blocks, as [{name, id, owner, owned, away}]. `owner` is the id of
 //                     the person it belongs to, if any. `owned` is whether that is in force right now.
@@ -38,7 +39,22 @@ import {TICK_SECONDS, waitTicks} from './clock.js'
 // world right now come back as {ok: false, reason}.
 
 const DIRECTIONS = {n: [0, -1], e: [1, 0], s: [0, 1], w: [-1, 0]}
-const REACH = 1          // blocks, counting diagonals, for picking up and spilling
+
+// Steps from the way the robot faces: forward, back, left and right
+const RELATIVE = {f: true, b: true, l: true, r: true}
+
+// The [column, row] step for 'f', 'b', 'l' or 'r' when the robot faces `facing` (an angle, as the robot
+// keeps it). Facing is taken as the nearest of north, east, south and west. North is up the screen (row
+// going down is south), so facing north, right is east.
+const relativeStep = (facing, way) => {
+    const across = Math.sin(facing)
+    const down = Math.cos(facing)
+    const [fx, fz] = Math.abs(across) >= Math.abs(down) ? [Math.sign(across), 0] : [0, Math.sign(down)]
+    const step = {f: [fx, fz], b: [-fx, -fz], r: [-fz, fx], l: [fz, -fx]}[way]
+    return step.map(value => value + 0)   // no negative zeros
+}
+
+const REACH = 1         // blocks, counting diagonals, for picking up and spilling
 
 // What an owner says when the robot tries to take their things
 const BUZZ_OFF = [
@@ -226,9 +242,10 @@ export const createRobot = (getState, log, run, clock) => {
 
     const move = async direction => {
         live()
-        const delta = DIRECTIONS[String(direction).toLowerCase()]
+        const way = String(direction).toLowerCase()
+        const delta = DIRECTIONS[way] ?? (way in RELATIVE ? relativeStep(player.facing, way) : null)
         if (!delta) {
-            throw new Error(`move() takes 'n', 'e', 's' or 'w', not '${direction}'`)
+            throw new Error(`move() takes 'n', 'e', 's' or 'w', or 'f', 'b', 'l' or 'r' from where the robot faces, not '${direction}'`)
         }
 
         // A step still going from an earlier call that wasn't awaited finishes first

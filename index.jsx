@@ -135,12 +135,17 @@ const Scene = props => {
 
             // The game moves on by game time: real time, except when stepping, where it only moves as far as
             // the Step button has allowed. The camera below goes by real time either way.
+            // A long stretch of game time (fast mode) is played in small pieces, so that the people walking
+            // about move as they would in real time
             const gameDelta = gameDeltaOf(clock, delta)
-            if (clock.counting) {
-                advanceClock(clock, gameDelta)
-            }
-            if (state) {
-                updateLevel(state, gameDelta)
+            const pieces = Math.max(1, Math.ceil(gameDelta / 0.1))
+            for (let piece = 0; piece < pieces; piece++) {
+                if (clock.counting) {
+                    advanceClock(clock, gameDelta / pieces)
+                }
+                if (state) {
+                    updateLevel(state, gameDelta / pieces)
+                }
             }
 
             const ticks = ticksOf(clock)
@@ -263,6 +268,13 @@ const LevelPanel = props => {
 
 const MAX_OUTPUT_LINES = 300
 
+// Stops the game: in step mode with nothing in the budget, time doesn't move. Gives the clock back.
+const freezeGame = clock => {
+    clock.mode = 'step'
+    clock.budget = 0
+    return clock
+}
+
 const PROGRAMS_KEY = 'hackman_programs'
 
 // The saved programs, or the one starter program if there are none (or they can't be read)
@@ -319,7 +331,9 @@ const Game = props => {
     const [line, setLine] = useState(null)           // the line of the code the program is on
     const level = LEVELS[levelId]
 
-    const [clock] = useState(createClock)            // game time (see game/clock.js)
+    // Game time (see game/clock.js). Before anything is run the game is frozen: nobody moves until Run,
+    // Step or Interactive is pressed.
+    const [clock] = useState(() => freezeGame(createClock()))
     const stateRef = useRef(() => null)              // the Scene fills this in: the loaded level
     const runRef = useRef(null)                      // the program running, so it can be stopped
 
@@ -485,6 +499,7 @@ const Game = props => {
         const manual = stay ? {run, busy: true} : null
         manualRef.current = manual
         resetClock(clock)
+        freezeGame(clock)   // held still while Python loads and the level is put back; the modes below set it going
         setTicks(0)
         setLine(null)
         setOutput([])
@@ -512,7 +527,8 @@ const Game = props => {
 
         if (!run.stopped) {
             clock.counting = true
-            clock.mode = stepping ? 'step' : 'live'
+            // Interactive mode first runs the program as fast as it can get through, to where it ends
+            clock.mode = stepping ? 'step' : stay ? 'fast' : 'live'
             clock.budget = stepping ? TICK_SECONDS : 0
             await runPython(code, () => stateRef.current(), log, run, clock, lineNumber => {
                 if (runRef.current === run) {
@@ -577,6 +593,7 @@ const Game = props => {
         stopInteractive()
         clock.counting = false
         resetClock(clock)
+        freezeGame(clock)
         setTicks(0)
         setLine(null)
         setPhase('idle')
